@@ -1,5 +1,5 @@
 /**************************************************************************
-       Title:   Morse Tutor ESP32						   
+       Title:   Morse Tutor ESP32               
       Author:   Bruce E. Hall, w8bh.net
         Date:   07 Jan 2022
     Hardware:   ESP32 DevBoard "HiLetGo", ILI9341 TFT display
