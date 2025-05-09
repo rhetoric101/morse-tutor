@@ -1308,14 +1308,14 @@ void headCopy()                                  // show a callsign & see if use
 
 void hitTone()
 {
-   ledcWriteTone(0,440); delay(150);               // first tone 
-   ledcWriteTone(0,600); delay(200);               // second tone
+   // ledcWriteTone(0,440); delay(150);               // first tone 
+   // ledcWriteTone(0,600); delay(200);               // second tone
    ledcWrite(0,0);                                 // audio off
 }
 
 void missTone()
 {
-  ledcWriteTone(0,200); delay(200);               // single tone
+  // ledcWriteTone(0,200); delay(200);               // single tone
   ledcWrite(0,0);                                 // audio off
 }
 
@@ -2097,8 +2097,7 @@ void IRAM_ATTR onTimer() {
   static uint8_t lastOutput = 128;
   uint8_t output = dacActive ? sineTable[sineIndex] : 128;
   if (output != lastOutput) {
-  //  dacWrite(DAC_PIN, output);
-    dacWrite(DAC_PIN, 255);
+    dacWrite(DAC_PIN, output);
     lastOutput = output;
   }
   sineIndex = (sineIndex + 1) % sineTableSize;
