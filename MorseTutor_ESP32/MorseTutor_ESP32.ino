@@ -549,17 +549,33 @@ int readEncoder(int numTicks = ENCODER_TICKS)
 
 //===================================  Morse Routines ===================================
 
+/* Original keyUp...
 void keyUp()                                      // device-dependent actions 
 {                                                 // when key is up:
   digitalWrite(LED,0);                            // turn off LED
   ledcWrite(0,0);                                 // and turn off sound
 }
+*/
+void keyUp() {
+  digitalWrite(LED, 0);        // Turn off LED
+  dacActive = false;           // Stop sine wave output
+  dacWrite(AUDIO, 128);        // Set DAC to midpoint (silence)
+  timerAlarmDisable(timer);    // Disable timer interrupt
+}
 
+/* Original keyDown...
 void keyDown()                                    // device-dependent actions
 {                                                 // when key is down:
   if (!SUPPRESSLED) digitalWrite(LED,1);          // turn on LED
   ledcWriteTone(0,pitch);                         // and turn on sound
 }
+*/
+void keyDown() {
+  if (!SUPPRESSLED) digitalWrite(LED, 1);  // Turn on LED
+  dacActive = true;                        // Start sine wave output
+  timerAlarmEnable(timer);                 // Enable timer interrupt
+}
+
 
 bool ditPressed()
 {
@@ -2014,8 +2030,8 @@ void initEncoder()
 
 void initMorse()
 {
-  ledcSetup(0,1E5,12);                            // smoke & mirrors for ESP32
-  ledcAttachPin(AUDIO,0);                         // since tone() not yet supported
+  // ledcSetup(0,1E5,12);                            // smoke & mirrors for ESP32
+  // ledcAttachPin(AUDIO,0);                         // since tone() not yet supported
   pinMode(LED,OUTPUT);                            // LED, but could be keyer output instead
   pinMode(PADDLE_A, INPUT_PULLUP);                // two paddle inputs, both active low
   pinMode(PADDLE_B, INPUT_PULLUP);
@@ -2065,6 +2081,7 @@ void initSineTable() {
 }
 
 // Add function per ChatGPT
+/* Temporarily remove per ChatGPT
 void IRAM_ATTR onTimer() {
   if (dacActive) {
     dacWrite(DAC_PIN, sineTable[sineIndex]);
@@ -2073,6 +2090,19 @@ void IRAM_ATTR onTimer() {
     dacWrite(DAC_PIN, 128);  // silence
   }
 }
+*/
+// Add this revision per ChatGPT:
+void IRAM_ATTR onTimer() {
+  static uint8_t lastOutput = 128;
+  uint8_t output = dacActive ? sineTable[sineIndex] : 128;
+  if (output != lastOutput) {
+    dacWrite(DAC_PIN, output);
+    lastOutput = output;
+  }
+  sineIndex = (sineIndex + 1) % sineTableSize;
+}
+
+
 
 
 void setup() 
@@ -2083,6 +2113,8 @@ void setup()
   timer = timerBegin(0, 80, true);  // 80 MHz / 80 = 1 MHz = 1 µs ticks
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 1000000 / freq, true);
+  timerAlarmEnable(timer);  // Start the DAC timer interrupt
+
   // above from ChatGPT
   Serial.begin(115200);                           // for debugging only 
   initScreen();                                   // blank screen in landscape mode
