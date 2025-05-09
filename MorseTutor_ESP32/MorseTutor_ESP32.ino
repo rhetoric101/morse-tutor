@@ -38,7 +38,13 @@
 #define AUDIO              13                     // Audio output
 #define LED                 2                     // onboard LED pin
 #define SCREEN_ROTATION     3                     // landscape mode: use '1' or '3'
+#define DAC_PIN 25  // ChatGPT
 
+const int sineTableSize = 64;
+uint8_t sineTable[sineTableSize];
+volatile int sineIndex = 0;
+volatile bool dacActive = false;
+hw_timer_t *timer = NULL;
 //===================================  Wireless Constants ===============================
 #define CHANNEL             1                     // Wifi channel number
 #define WIFI_SSID      "W8BH Tutor"               // Wifi network name
@@ -2050,9 +2056,34 @@ void splashScreen()                               // not splashy at all!
   tft.setTextSize(2);
 }
 
+// Add function per ChatGPT
+void initSineTable() {
+  for (int i = 0; i < sineTableSize; i++) {
+    float theta = (2.0 * PI * i) / sineTableSize;
+    sineTable[i] = 128 + 127 * sin(theta);  // 8-bit DAC: center 128
+  }
+}
+
+// Add function per ChatGPT
+void IRAM_ATTR onTimer() {
+  if (dacActive) {
+    dacWrite(DAC_PIN, sineTable[sineIndex]);
+    sineIndex = (sineIndex + 1) % sineTableSize;
+  } else {
+    dacWrite(DAC_PIN, 128);  // silence
+  }
+}
+
 
 void setup() 
 {
+  //Add these lines from ChatGPT
+  initSineTable();
+  int freq = pitch * sineTableSize;
+  timer = timerBegin(0, 80, true);  // 80 MHz / 80 = 1 MHz = 1 µs ticks
+  timerAttachInterrupt(timer, &onTimer, true);
+  timerAlarmWrite(timer, 1000000 / freq, true);
+  // above from ChatGPT
   Serial.begin(115200);                           // for debugging only 
   initScreen();                                   // blank screen in landscape mode
   EEPROM.begin(32);                               // ESP32 specific for 32 bytes Flash
