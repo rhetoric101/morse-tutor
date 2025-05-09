@@ -567,11 +567,12 @@ void keyUp() {
 void keyDown()                                    // device-dependent actions
 {                                                 // when key is down:
   if (!SUPPRESSLED) digitalWrite(LED,1);          // turn on LED
-  ledcWriteTone(0,pitch);                         // and turn on sound
+   ledcWriteTone(0,pitch);                         // and turn on sound
 }
 */
 void keyDown() {
   if (!SUPPRESSLED) digitalWrite(LED, 1);  // Turn on LED
+  sineIndex = 0;  // Start from beginning of sine wave
   dacActive = true;                        // Start sine wave output
   timerAlarmEnable(timer);                 // Enable timer interrupt
 }
@@ -1307,9 +1308,9 @@ void headCopy()                                  // show a callsign & see if use
 
 void hitTone()
 {
-  ledcWriteTone(0,440); delay(150);               // first tone 
-  ledcWriteTone(0,600); delay(200);               // second tone
-  ledcWrite(0,0);                                 // audio off
+   ledcWriteTone(0,440); delay(150);               // first tone 
+   ledcWriteTone(0,600); delay(200);               // second tone
+   ledcWrite(0,0);                                 // audio off
 }
 
 void missTone()
@@ -2096,7 +2097,8 @@ void IRAM_ATTR onTimer() {
   static uint8_t lastOutput = 128;
   uint8_t output = dacActive ? sineTable[sineIndex] : 128;
   if (output != lastOutput) {
-    dacWrite(DAC_PIN, output);
+  //  dacWrite(DAC_PIN, output);
+    dacWrite(DAC_PIN, 255);
     lastOutput = output;
   }
   sineIndex = (sineIndex + 1) % sineTableSize;
@@ -2113,7 +2115,7 @@ void setup()
   timer = timerBegin(0, 80, true);  // 80 MHz / 80 = 1 MHz = 1 µs ticks
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 1000000 / freq, true);
-  timerAlarmEnable(timer);  // Start the DAC timer interrupt
+  // timerAlarmEnable(timer);  // Start the DAC timer interrupt
 
   // above from ChatGPT
   Serial.begin(115200);                           // for debugging only 
