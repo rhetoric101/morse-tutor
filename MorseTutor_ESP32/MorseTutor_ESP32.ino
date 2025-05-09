@@ -1306,17 +1306,41 @@ void headCopy()                                  // show a callsign & see if use
   }
 }
 
+/* Old pre-DAC hit-tone function:
 void hitTone()
 {
    // ledcWriteTone(0,440); delay(150);               // first tone 
    // ledcWriteTone(0,600); delay(200);               // second tone
-   ledcWrite(0,0);                                 // audio off
+   // ledcWrite(0,0);                                 // audio off
+}
+*/
+// New DAC hitTone function:
+void hitTone() {
+  sineIndex = 0;
+  dacActive = true;
+  timerAlarmEnable(timer);  // Start DAC output
+  delay(300);               // Tone duration
+  timerAlarmDisable(timer); // Stop DAC output
+  dacWrite(DAC_PIN, 128);   // Midpoint = silence
+  dacActive = false;
 }
 
+/* Old missTone function before DAC:
 void missTone()
 {
   // ledcWriteTone(0,200); delay(200);               // single tone
-  ledcWrite(0,0);                                 // audio off
+  // ledcWrite(0,0);                                 // audio off
+}
+*/
+
+void missTone() {
+  sineIndex = 0;
+  dacActive = true;
+  timerAlarmEnable(timer);
+  delay(200);
+  timerAlarmDisable(timer);
+  dacWrite(DAC_PIN, 128);
+  dacActive = false;
 }
 
 void mimic2(char *text)                           // used by head-copy feature
