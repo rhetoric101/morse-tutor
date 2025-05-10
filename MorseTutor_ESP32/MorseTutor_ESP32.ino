@@ -40,11 +40,18 @@
 #define SCREEN_ROTATION     3                     // landscape mode: use '1' or '3'
 #define DAC_PIN 25  // ChatGPT
 
-const int sineTableSize = 64;
+const int sineTableSize = 128;
 uint8_t sineTable[sineTableSize];
 volatile int sineIndex = 0;
 volatile bool dacActive = false;
 hw_timer_t *timer = NULL;
+
+// variables for fading envelop:
+
+volatile bool envelopeActive = false;
+volatile uint8_t envelopeStep = 0;
+const uint8_t envelopeMax = 32;  // How many steps to fade in/out
+
 //===================================  Wireless Constants ===============================
 #define CHANNEL             1                     // Wifi channel number
 #define WIFI_SSID      "W8BH Tutor"               // Wifi network name
@@ -556,26 +563,39 @@ void keyUp()                                      // device-dependent actions
   ledcWrite(0,0);                                 // and turn off sound
 }
 */
+/* Temporarily commenting this out to add an envelope
 void keyUp() {
   digitalWrite(LED, 0);        // Turn off LED
   dacActive = false;           // Stop sine wave output
   dacWrite(AUDIO, 128);        // Set DAC to midpoint (silence)
   timerAlarmDisable(timer);    // Disable timer interrupt
 }
-
-/* Original keyDown...
-void keyDown()                                    // device-dependent actions
-{                                                 // when key is down:
-  if (!SUPPRESSLED) digitalWrite(LED,1);          // turn on LED
-   ledcWriteTone(0,pitch);                         // and turn on sound
-}
 */
-// Use this function, per ChatGPT
+void keyUp() {
+  digitalWrite(LED, 0);
+  envelopeStep = envelopeMax;  // Start fade-out
+  envelopeActive = true;
+  dacActive = false;           // Stops triggering new tones
+}
+
+
+
+
+/* Temporarily commenting this out in favor a fade-in version below
 void keyDown() {
   if (!SUPPRESSLED) digitalWrite(LED, 1);  // Optional visual cue
   sineIndex = 0;                           // Reset waveform phase
   dacActive = true;                        // Enable sine output
   timerAlarmEnable(timer);                // Start DAC timer
+}
+*/
+void keyDown() {
+  if (!SUPPRESSLED) digitalWrite(LED, 1);
+  sineIndex = 0;
+  envelopeStep = 0;
+  envelopeActive = true;  // Start fade-in
+  dacActive = true;
+  timerAlarmEnable(timer);
 }
 
 
@@ -2120,7 +2140,7 @@ void IRAM_ATTR onTimer() {
 }
 */
 
-// Use this onTimer per ChatGPT
+/* Comment this out per ChatGPT while testing envelope code...
 void IRAM_ATTR onTimer() {
   static uint8_t lastOutput = 128;
   uint8_t output = dacActive ? sineTable[sineIndex] : 128;
@@ -2132,6 +2152,49 @@ void IRAM_ATTR onTimer() {
 
   sineIndex = (sineIndex + 1) % sineTableSize;
 }
+*/
+void IRAM_ATTR onTimer() {
+  static uint8_t lastOutput = 128;
+  uint8_t rawSample = sineTable[sineIndex];
+  uint8_t output;
+
+  if (dacActive) {
+    if (envelopeActive) {
+      if (envelopeStep < envelopeMax) {
+        // Fade in
+        output = 128 + ((rawSample - 128) * envelopeStep) / envelopeMax;
+        envelopeStep++;
+      } else {
+        output = rawSample;
+        envelopeActive = false;  // Done fading
+      }
+    } else {
+      output = rawSample;
+    }
+  } else {
+    if (envelopeActive) {
+      if (envelopeStep > 0) {
+        // Fade out
+        output = 128 + ((rawSample - 128) * envelopeStep) / envelopeMax;
+        envelopeStep--;
+      } else {
+        output = 128;
+        envelopeActive = false;
+        timerAlarmDisable(timer);
+      }
+    } else {
+      output = 128;
+    }
+  }
+
+  if (output != lastOutput) {
+    dacWrite(DAC_PIN, output);
+    lastOutput = output;
+  }
+
+  sineIndex = (sineIndex + 1) % sineTableSize;
+}
+
 
 
 
