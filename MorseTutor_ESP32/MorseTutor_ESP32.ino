@@ -50,7 +50,9 @@ hw_timer_t *timer = NULL;
 
 volatile bool envelopeActive = false;
 volatile uint8_t envelopeStep = 0;
-const uint8_t envelopeMax = 32;  // How many steps to fade in/out
+// const uint8_t envelopeMax = 32;  // How many steps to fade in/out
+const int envelopeMax = sineTableSize;  // 64 for sineTableSize of 128
+
 
 //===================================  Wireless Constants ===============================
 #define CHANNEL             1                     // Wifi channel number
