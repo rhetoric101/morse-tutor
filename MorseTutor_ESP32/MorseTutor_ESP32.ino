@@ -570,12 +570,14 @@ void keyDown()                                    // device-dependent actions
    ledcWriteTone(0,pitch);                         // and turn on sound
 }
 */
+// Use this function, per ChatGPT
 void keyDown() {
-  if (!SUPPRESSLED) digitalWrite(LED, 1);  // Turn on LED
-  sineIndex = 0;  // Start from beginning of sine wave
-  dacActive = true;                        // Start sine wave output
-  timerAlarmEnable(timer);                 // Enable timer interrupt
+  if (!SUPPRESSLED) digitalWrite(LED, 1);  // Optional visual cue
+  sineIndex = 0;                           // Reset waveform phase
+  dacActive = true;                        // Enable sine output
+  timerAlarmEnable(timer);                // Start DAC timer
 }
+
 
 
 bool ditPressed()
@@ -1314,16 +1316,17 @@ void hitTone()
    // ledcWrite(0,0);                                 // audio off
 }
 */
-// New DAC hitTone function:
+// Final hitTone from ChatGPT
 void hitTone() {
-  sineIndex = 0;
-  dacActive = true;
-  timerAlarmEnable(timer);  // Start DAC output
-  delay(300);               // Tone duration
-  timerAlarmDisable(timer); // Stop DAC output
-  dacWrite(DAC_PIN, 128);   // Midpoint = silence
+  sineIndex = 0;               // Start at beginning of waveform
+  dacActive = true;            // Enable sine output
+  timerAlarmEnable(timer);     // Start DAC timer
+  delay(300);                  // Tone duration
+  timerAlarmDisable(timer);    // Stop DAC timer
+  dacWrite(DAC_PIN, 128);      // Set to silent midpoint
   dacActive = false;
 }
+
 
 /* Old missTone function before DAC:
 void missTone()
@@ -2116,14 +2119,17 @@ void IRAM_ATTR onTimer() {
   }
 }
 */
-// Add this revision per ChatGPT:
+
+// Use this onTimer per ChatGPT
 void IRAM_ATTR onTimer() {
   static uint8_t lastOutput = 128;
   uint8_t output = dacActive ? sineTable[sineIndex] : 128;
+
   if (output != lastOutput) {
     dacWrite(DAC_PIN, output);
     lastOutput = output;
   }
+
   sineIndex = (sineIndex + 1) % sineTableSize;
 }
 
