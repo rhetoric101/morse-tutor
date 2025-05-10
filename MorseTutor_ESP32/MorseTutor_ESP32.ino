@@ -25,6 +25,7 @@
 #include "SD.h"
 #include "esp_now.h"
 #include "WiFi.h"
+#include "math.h"
 
 //===================================  Hardware Connections =============================
 #define TFT_DC             21                     // Display "DC" pin
@@ -52,6 +53,10 @@ volatile bool envelopeActive = false;
 volatile uint8_t envelopeStep = 0;
 // const uint8_t envelopeMax = 32;  // How many steps to fade in/out
 const int envelopeMax = sineTableSize;  // 64 for sineTableSize of 128
+
+// For the envelope code:
+
+uint8_t envelopeTable[envelopeMax];  // fade-in envelope
 
 
 //===================================  Wireless Constants ===============================
@@ -2163,12 +2168,12 @@ void IRAM_ATTR onTimer() {
   if (dacActive) {
     if (envelopeActive) {
       if (envelopeStep < envelopeMax) {
-        // Fade in
-        output = 128 + ((rawSample - 128) * envelopeStep) / envelopeMax;
+        uint8_t scale = envelopeTable[envelopeStep];
+        output = 128 + ((rawSample - 128) * scale) / 255;
         envelopeStep++;
       } else {
         output = rawSample;
-        envelopeActive = false;  // Done fading
+        envelopeActive = false;
       }
     } else {
       output = rawSample;
@@ -2176,13 +2181,13 @@ void IRAM_ATTR onTimer() {
   } else {
     if (envelopeActive) {
       if (envelopeStep > 0) {
-        // Fade out
-        output = 128 + ((rawSample - 128) * envelopeStep) / envelopeMax;
+        uint8_t scale = envelopeTable[envelopeStep];
+        output = 128 + ((rawSample - 128) * scale) / 255;
         envelopeStep--;
       } else {
         output = 128;
         envelopeActive = false;
-        timerAlarmDisable(timer);
+        timerAlarmDisable(timer);  // Stop DAC
       }
     } else {
       output = 128;
@@ -2197,12 +2202,14 @@ void IRAM_ATTR onTimer() {
   sineIndex = (sineIndex + 1) % sineTableSize;
 }
 
-
-
-
-
 void setup() 
 {
+  // Add these lines from ChatGPT for envelope:
+  for (int i = 0; i < envelopeMax; i++) {
+    float scale = 0.5 * (1 - cos(PI * i / (envelopeMax - 1)));  // cosine fade
+    envelopeTable[i] = (uint8_t)(scale * 255);
+  }
+
   //Add these lines from ChatGPT
   initSineTable();
   int freq = pitch * sineTableSize;
