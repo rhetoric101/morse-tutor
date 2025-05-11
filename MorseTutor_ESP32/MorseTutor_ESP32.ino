@@ -1,5 +1,5 @@
 /**************************************************************************
-       Title:   Morse Tutor ESP32						   
+       Title:   Morse Tutor ESP32               
       Author:   Bruce E. Hall, w8bh.net
         Date:   07 Jan 2022
     Hardware:   ESP32 DevBoard "HiLetGo", ILI9341 TFT display
@@ -25,6 +25,7 @@
 #include "SD.h"
 #include "esp_now.h"
 #include "WiFi.h"
+#include "math.h"
 
 //===================================  Hardware Connections =============================
 #define TFT_DC             21                     // Display "DC" pin
@@ -38,6 +39,19 @@
 #define AUDIO              13                     // Audio output
 #define LED                 2                     // onboard LED pin
 #define SCREEN_ROTATION     3                     // landscape mode: use '1' or '3'
+
+#define SINE_TABLE_SIZE 64
+#define ENVELOPE_MAX SINE_TABLE_SIZE
+#define DAC_PIN 25  
+
+uint8_t sineTable[SINE_TABLE_SIZE];
+uint8_t envelopeTable[ENVELOPE_MAX + 1]; // Holds cosine-shaped envelope
+volatile bool dacActive = false;
+volatile bool envelopeActive = false;
+volatile uint8_t envelopeStep = 0;
+volatile int sineIndex = 0;
+
+hw_timer_t *timer = NULL;
 
 //===================================  Wireless Constants ===============================
 #define CHANNEL             1                     // Wifi channel number
@@ -543,17 +557,46 @@ int readEncoder(int numTicks = ENCODER_TICKS)
 
 //===================================  Morse Routines ===================================
 
+/* Original keyUp...
 void keyUp()                                      // device-dependent actions 
 {                                                 // when key is up:
   digitalWrite(LED,0);                            // turn off LED
   ledcWrite(0,0);                                 // and turn off sound
 }
-
-void keyDown()                                    // device-dependent actions
-{                                                 // when key is down:
-  if (!SUPPRESSLED) digitalWrite(LED,1);          // turn on LED
-  ledcWriteTone(0,pitch);                         // and turn on sound
+*/
+/* Temporarily commenting this out to add an envelope
+void keyUp() {
+  digitalWrite(LED, 0);        // Turn off LED
+  dacActive = false;           // Stop sine wave output
+  dacWrite(AUDIO, 128);        // Set DAC to midpoint (silence)
+  timerAlarmDisable(timer);    // Disable timer interrupt
 }
+*/
+void keyUp() {
+  digitalWrite(LED, 0);
+  envelopeStep = ENVELOPE_MAX - 1;
+  envelopeActive = true;
+  dacActive = false;
+}
+
+/* Temporarily commenting this out in favor a fade-in version below
+void keyDown() {
+  if (!SUPPRESSLED) digitalWrite(LED, 1);  // Optional visual cue
+  sineIndex = 0;                           // Reset waveform phase
+  dacActive = true;                        // Enable sine output
+  timerAlarmEnable(timer);                // Start DAC timer
+}
+*/
+void keyDown() {
+  if (!SUPPRESSLED) digitalWrite(LED, 1);
+  sineIndex = 0;
+  envelopeStep = 0;
+  envelopeActive = true;  // Start fade-in
+  dacActive = true;
+  timerAlarmEnable(timer);
+}
+
+
 
 bool ditPressed()
 {
@@ -1283,17 +1326,42 @@ void headCopy()                                  // show a callsign & see if use
   }
 }
 
+/* Old pre-DAC hit-tone function:
 void hitTone()
 {
-  ledcWriteTone(0,440); delay(150);               // first tone 
-  ledcWriteTone(0,600); delay(200);               // second tone
-  ledcWrite(0,0);                                 // audio off
+   // ledcWriteTone(0,440); delay(150);               // first tone 
+   // ledcWriteTone(0,600); delay(200);               // second tone
+   // ledcWrite(0,0);                                 // audio off
+}
+*/
+// Final hitTone from ChatGPT
+void hitTone() {
+  sineIndex = 0;               // Start at beginning of waveform
+  dacActive = true;            // Enable sine output
+  timerAlarmEnable(timer);     // Start DAC timer
+  delay(300);                  // Tone duration
+  timerAlarmDisable(timer);    // Stop DAC timer
+  dacWrite(DAC_PIN, 128);      // Set to silent midpoint
+  dacActive = false;
 }
 
+
+/* Old missTone function before DAC:
 void missTone()
 {
-  ledcWriteTone(0,200); delay(200);               // single tone
-  ledcWrite(0,0);                                 // audio off
+  // ledcWriteTone(0,200); delay(200);               // single tone
+  // ledcWrite(0,0);                                 // audio off
+}
+*/
+
+void missTone() {
+  sineIndex = 0;
+  dacActive = true;
+  timerAlarmEnable(timer);
+  delay(200);
+  timerAlarmDisable(timer);
+  dacWrite(DAC_PIN, 128);
+  dacActive = false;
 }
 
 void mimic2(char *text)                           // used by head-copy feature
@@ -2008,8 +2076,8 @@ void initEncoder()
 
 void initMorse()
 {
-  ledcSetup(0,1E5,12);                            // smoke & mirrors for ESP32
-  ledcAttachPin(AUDIO,0);                         // since tone() not yet supported
+  // ledcSetup(0,1E5,12);                            // smoke & mirrors for ESP32
+  // ledcAttachPin(AUDIO,0);                         // since tone() not yet supported
   pinMode(LED,OUTPUT);                            // LED, but could be keyer output instead
   pinMode(PADDLE_A, INPUT_PULLUP);                // two paddle inputs, both active low
   pinMode(PADDLE_B, INPUT_PULLUP);
@@ -2050,18 +2118,102 @@ void splashScreen()                               // not splashy at all!
   tft.setTextSize(2);
 }
 
+// Add function per ChatGPT
+void initSineTable() {
+  for (int i = 0; i < SINE_TABLE_SIZE; i++) {
+    float theta = (2.0 * PI * i) / SINE_TABLE_SIZE;
+    sineTable[i] = 128 + 127 * sin(theta);  // 8-bit DAC: center 128
+  }
+}
 
+// Add function per ChatGPT
+/* Temporarily remove per ChatGPT
+void IRAM_ATTR onTimer() {
+  if (dacActive) {
+    dacWrite(DAC_PIN, sineTable[sineIndex]);
+    sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
+  } else {
+    dacWrite(DAC_PIN, 128);  // silence
+  }
+}
+*/
+
+/* Comment this out per ChatGPT while testing envelope code...
+void IRAM_ATTR onTimer() {
+  static uint8_t lastOutput = 128;
+  uint8_t output = dacActive ? sineTable[sineIndex] : 128;
+
+  if (output != lastOutput) {
+    dacWrite(DAC_PIN, output);
+    lastOutput = output;
+  }
+
+  sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
+}
+*/
+// Updated onTImer() from ChatGPT
+void IRAM_ATTR onTimer() {
+  static uint8_t lastOutput = 128;
+  uint8_t rawSample = sineTable[sineIndex];
+  uint8_t scale = envelopeTable[envelopeStep];
+  uint8_t output;
+
+  if (dacActive) {
+    if (envelopeActive && envelopeStep < ENVELOPE_MAX) {
+      output = 128 + ((rawSample - 128) * scale) / 255;
+      envelopeStep++;
+    } else {
+      output = rawSample;
+      envelopeActive = false;
+    }
+  } else {
+    if (envelopeActive && envelopeStep > 0) {
+      output = 128 + ((rawSample - 128) * scale) / 255;
+      envelopeStep--;
+    } else {
+      output = 128;
+      envelopeActive = false;
+      timerAlarmDisable(timer);
+    }
+  }
+
+  if (output != lastOutput) {
+    dacWrite(DAC_PIN, output);
+    lastOutput = output;
+  }
+
+  sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
+}
+
+
+// Initialize envelope from ChatGPT:
+void initEnvelopeTable() {
+  for (int i = 0; i <= ENVELOPE_MAX; i++) {
+    float scale = 0.5 * (1 - cos(PI * i / ENVELOPE_MAX));  // cosine ramp
+    envelopeTable[i] = (uint8_t)(scale * 255);
+  }
+}
 void setup() 
-{
-  Serial.begin(115200);                           // for debugging only 
-  initScreen();                                   // blank screen in landscape mode
-  EEPROM.begin(32);                               // ESP32 specific for 32 bytes Flash
-  initSD();                                       // initialize SD library
-  loadConfig();                                   // get saved values from EEPROM
-  splashScreen();                                 // show we are ready
-  initEncoder();                                  // attach encoder interrupts
-  initMorse();                                    // attach paddles & adjust speed
-  delay(2000);                                    // keep splash screen on for a while
+{    
+  Serial.begin(115200);  // ← This MUST be first for consistent debug output
+  initSineTable();
+  initEnvelopeTable(); 
+
+  int freq = pitch * SINE_TABLE_SIZE;
+  timer = timerBegin(0, 80, true);  
+  timerAttachInterrupt(timer, &onTimer, true);
+  timerAlarmWrite(timer, 1000000 / freq, true);
+  // timerAlarmEnable(timer);  // Enabled dynamically in keyDown
+
+  Serial.begin(115200); 
+  initScreen();
+  EEPROM.begin(32);
+  initSD();
+  loadConfig();
+  splashScreen();
+  initEncoder();
+  initMorse();
+  delay(2000);
   clearScreen();
 }
 
