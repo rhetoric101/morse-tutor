@@ -39,25 +39,19 @@
 #define AUDIO              13                     // Audio output
 #define LED                 2                     // onboard LED pin
 #define SCREEN_ROTATION     3                     // landscape mode: use '1' or '3'
-#define DAC_PIN 25  // ChatGPT
 
-const int sineTableSize = 128;
-uint8_t sineTable[sineTableSize];
-volatile int sineIndex = 0;
+#define SINE_TABLE_SIZE 64
+#define ENVELOPE_MAX SINE_TABLE_SIZE
+#define DAC_PIN 25  
+
+uint8_t sineTable[SINE_TABLE_SIZE];
+uint8_t envelopeTable[ENVELOPE_MAX + 1]; // Holds cosine-shaped envelope
 volatile bool dacActive = false;
-hw_timer_t *timer = NULL;
-
-// variables for fading envelop:
-
 volatile bool envelopeActive = false;
 volatile uint8_t envelopeStep = 0;
-// const uint8_t envelopeMax = 32;  // How many steps to fade in/out
-const int envelopeMax = sineTableSize;  // 64 for sineTableSize of 128
+volatile int sineIndex = 0;
 
-// For the envelope code:
-
-uint8_t envelopeTable[envelopeMax];  // fade-in envelope
-
+hw_timer_t *timer = NULL;
 
 //===================================  Wireless Constants ===============================
 #define CHANNEL             1                     // Wifi channel number
@@ -580,13 +574,10 @@ void keyUp() {
 */
 void keyUp() {
   digitalWrite(LED, 0);
-  envelopeStep = envelopeMax;  // Start fade-out
+  envelopeStep = ENVELOPE_MAX - 1;
   envelopeActive = true;
-  dacActive = false;           // Stops triggering new tones
+  dacActive = false;
 }
-
-
-
 
 /* Temporarily commenting this out in favor a fade-in version below
 void keyDown() {
@@ -2129,8 +2120,8 @@ void splashScreen()                               // not splashy at all!
 
 // Add function per ChatGPT
 void initSineTable() {
-  for (int i = 0; i < sineTableSize; i++) {
-    float theta = (2.0 * PI * i) / sineTableSize;
+  for (int i = 0; i < SINE_TABLE_SIZE; i++) {
+    float theta = (2.0 * PI * i) / SINE_TABLE_SIZE;
     sineTable[i] = 128 + 127 * sin(theta);  // 8-bit DAC: center 128
   }
 }
@@ -2140,7 +2131,7 @@ void initSineTable() {
 void IRAM_ATTR onTimer() {
   if (dacActive) {
     dacWrite(DAC_PIN, sineTable[sineIndex]);
-    sineIndex = (sineIndex + 1) % sineTableSize;
+    sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
   } else {
     dacWrite(DAC_PIN, 128);  // silence
   }
@@ -2157,40 +2148,32 @@ void IRAM_ATTR onTimer() {
     lastOutput = output;
   }
 
-  sineIndex = (sineIndex + 1) % sineTableSize;
+  sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
 }
 */
+// Updated onTImer() from ChatGPT
 void IRAM_ATTR onTimer() {
   static uint8_t lastOutput = 128;
   uint8_t rawSample = sineTable[sineIndex];
+  uint8_t scale = envelopeTable[envelopeStep];
   uint8_t output;
 
   if (dacActive) {
-    if (envelopeActive) {
-      if (envelopeStep < envelopeMax) {
-        uint8_t scale = envelopeTable[envelopeStep];
-        output = 128 + ((rawSample - 128) * scale) / 255;
-        envelopeStep++;
-      } else {
-        output = rawSample;
-        envelopeActive = false;
-      }
+    if (envelopeActive && envelopeStep < ENVELOPE_MAX) {
+      output = 128 + ((rawSample - 128) * scale) / 255;
+      envelopeStep++;
     } else {
       output = rawSample;
+      envelopeActive = false;
     }
   } else {
-    if (envelopeActive) {
-      if (envelopeStep > 0) {
-        uint8_t scale = envelopeTable[envelopeStep];
-        output = 128 + ((rawSample - 128) * scale) / 255;
-        envelopeStep--;
-      } else {
-        output = 128;
-        envelopeActive = false;
-        timerAlarmDisable(timer);  // Stop DAC
-      }
+    if (envelopeActive && envelopeStep > 0) {
+      output = 128 + ((rawSample - 128) * scale) / 255;
+      envelopeStep--;
     } else {
       output = 128;
+      envelopeActive = false;
+      timerAlarmDisable(timer);
     }
   }
 
@@ -2199,35 +2182,38 @@ void IRAM_ATTR onTimer() {
     lastOutput = output;
   }
 
-  sineIndex = (sineIndex + 1) % sineTableSize;
+  sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
 }
 
-void setup() 
-{
-  // Add these lines from ChatGPT for envelope:
-  for (int i = 0; i < envelopeMax; i++) {
-    float scale = 0.5 * (1 - cos(PI * i / (envelopeMax - 1)));  // cosine fade
+
+// Initialize envelope from ChatGPT:
+void initEnvelopeTable() {
+  for (int i = 0; i <= ENVELOPE_MAX; i++) {
+    float scale = 0.5 * (1 - cos(PI * i / ENVELOPE_MAX));  // cosine ramp
     envelopeTable[i] = (uint8_t)(scale * 255);
   }
-
-  //Add these lines from ChatGPT
+}
+void setup() 
+{    
+  Serial.begin(115200);  // ← This MUST be first for consistent debug output
   initSineTable();
-  int freq = pitch * sineTableSize;
-  timer = timerBegin(0, 80, true);  // 80 MHz / 80 = 1 MHz = 1 µs ticks
+  initEnvelopeTable(); 
+
+  int freq = pitch * SINE_TABLE_SIZE;
+  timer = timerBegin(0, 80, true);  
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 1000000 / freq, true);
-  // timerAlarmEnable(timer);  // Start the DAC timer interrupt
+  // timerAlarmEnable(timer);  // Enabled dynamically in keyDown
 
-  // above from ChatGPT
-  Serial.begin(115200);                           // for debugging only 
-  initScreen();                                   // blank screen in landscape mode
-  EEPROM.begin(32);                               // ESP32 specific for 32 bytes Flash
-  initSD();                                       // initialize SD library
-  loadConfig();                                   // get saved values from EEPROM
-  splashScreen();                                 // show we are ready
-  initEncoder();                                  // attach encoder interrupts
-  initMorse();                                    // attach paddles & adjust speed
-  delay(2000);                                    // keep splash screen on for a while
+  Serial.begin(115200); 
+  initScreen();
+  EEPROM.begin(32);
+  initSD();
+  loadConfig();
+  splashScreen();
+  initEncoder();
+  initMorse();
+  delay(2000);
   clearScreen();
 }
 
