@@ -129,6 +129,8 @@ volatile boolean  button_pressed   = false;       // true if the button has been
 volatile boolean  button_released  = false;       // true if the button has been released (sets button_downtime)
 volatile long     button_downtime  = 0L;          // ms the button was pushed before released
 
+
+
 //===================================  Morse Code Variables =============================
 
                     // The following is a list of the 100 most-common English words, in frequency order.
@@ -241,7 +243,10 @@ int bgColor     = BG;                             // background (screen) color
 int brightness  = 100;                            // backlight level (range 0-100%)
 int startItem   = 0;                              // startup activity.  0 = main menu
 
-
+void updateToneFrequency() {
+  int freq = pitch * SINE_TABLE_SIZE;  // pitch is WPM-ish, table is samples/cycle
+  timerAlarmWrite(timer, 1000000 / freq, true);  // update interval for new frequency
+}
 
 //===================================  Menu Variables ===================================
 int  menuCol=0, textRow=0, textCol=0;
@@ -595,8 +600,6 @@ void keyDown() {
   dacActive = true;
   timerAlarmEnable(timer);
 }
-
-
 
 bool ditPressed()
 {
@@ -1778,7 +1781,8 @@ void setSpeed()
   saveConfig();                                   // save the new speed values
   roger();                                        // and acknowledge  
 }
-
+// Comment out old setPitch per ChatGPT
+/*
 void setPitch()
 {
   const int x=120,y=80;                           // screen posn for pitch display
@@ -1802,6 +1806,36 @@ void setPitch()
   saveConfig();                                   // save the new pitch 
   roger();                                        // and acknowledge
 }
+*/
+
+// New setPitch from ChatGPT
+void setPitch()
+{
+  const int x = 120, y = 80;                           // screen posn for pitch display
+  tft.print("Tone Frequency (Hz)");
+  tft.setTextSize(4);
+  tft.setCursor(x, y);
+  tft.print(pitch);                                    // show current pitch                 
+
+  while (!button_pressed)
+  {
+    int dir = readEncoder(2);
+    if (dir != 0)                                      // user rotated encoder knob
+    {
+      pitch += dir * 50;                               // change pitch up/down, 50Hz increments
+      pitch = constrain(pitch, MINPITCH, MAXPITCH);    // stay in range
+      tft.fillRect(x, y, 100, 40, bgColor);            // erase old value
+      tft.setCursor(x, y);
+      tft.print(pitch);                                // display new value
+      updateToneFrequency();                           // 🔄 update DAC timer
+      dit();                                           // optional: sound test blip
+    }
+  }
+
+  saveConfig();                                        // save the new pitch 
+  roger();                                             // audible confirmation
+}
+
 
 void configKey()
 {
