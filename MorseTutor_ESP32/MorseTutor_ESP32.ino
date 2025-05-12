@@ -980,21 +980,37 @@ void sendQSO()
   sendString(qso);                                // send entire QSO
 }
 
-int getFileList  (char list[][FNAMESIZE])         // gets list of files on SD card
+// New getFileList
+// This replaces the original strcpy() line with a more robust version that:
+// * Avoids skipping the first letter unless it’s a /
+// * Protects against buffer overflows
+// * Ensures null termination
+
+int getFileList(char list[][FNAMESIZE])         // gets list of files on SD card
 {
-  File root = SD.open("/");                       // open root directory on the SD card
-  int count=0;                                    // count the number of files
-  while (count < MAXFILES)                        // only room for so many!
+  File root = SD.open("/");                     // open root directory on the SD card
+  int count = 0;                                // count the number of files
+  while (count < MAXFILES)                      // only room for so many!
   {
-    File entry = root.openNextFile();             // get next file in the SD root directory
-    if (!entry) break;                            // leave if there aren't any more
-    if (!entry.isDirectory() &&                   // ignore directory names
-    (entry.name()[0] != '_'))                     // ignore hidden "_name" Mac files
-      strcpy(list[count++],&entry.name()[1]);     // add SD file to the list (ESP32: remove '/')
-    entry.close();                                // close the file
+    File entry = root.openNextFile();           // get next file in the SD root directory
+    if (!entry) break;                          // leave if there aren't any more
+
+    const char* name = entry.name();
+
+    if (!entry.isDirectory() && name[0] != '_') // skip directories and Mac metadata
+    {
+      if (name[0] == '/') name++;               // skip leading slash if present
+
+      strncpy(list[count], name, FNAMESIZE - 1);     // copy filename safely
+      list[count][FNAMESIZE - 1] = '\0';             // ensure null termination
+      Serial.printf("File %d: [%s]\n", count, list[count]);  // log for debug
+      count++;
+    }
+
+    entry.close();                              // close the file
   }
-  root.close(); 
-  return count; 
+  root.close();
+  return count;
 }
 
 void displayFiles(char menu[][FNAMESIZE], int top, int itemCount)
@@ -1053,6 +1069,8 @@ int fileMenu(char menu[][FNAMESIZE], int itemCount) // Display list of files & g
   return index;  
 }
 
+// Here's the original sendFile
+/*
 void sendFile(char* filename)                     // output a file to screen & morse
 {
   char s[FNAMESIZE] = "/";                        // ESP32: need space for whole filename
@@ -1081,6 +1099,59 @@ void sendFile(char* filename)                     // output a file to screen & m
   } 
   if (wireless) closeWireless();                  // close wireless transmission
 }
+*/
+// New sendFile
+void sendFile(char* filename)                     // output a file to screen & morse
+{
+  char s[FNAMESIZE] = "/";
+  strncat(s, filename, FNAMESIZE - 2);            // safely prepend slash
+  s[FNAMESIZE - 1] = '\0';                        // ensure null termination
+
+  Serial.print("Requested file: ");
+  Serial.println(filename);
+  Serial.print("Full path: ");
+  Serial.println(s);
+
+  const int pageSkip = 250;
+  newScreen();
+
+  bool wireless = longPress();
+  if (wireless) initWireless();
+
+  button_pressed = false;
+
+  File book = SD.open(s);
+  if (!book) {
+    Serial.println("Failed to open file.");
+    return;
+  }
+
+  Serial.println("File opened successfully.");
+
+  while (!button_pressed && book.available()) {
+    int ch = book.read();
+    if (ch < 0) break;
+
+    if (ch == '\n') ch = ' ';
+    
+    // Debug: echo character to serial
+    Serial.write(ch);  // Optional: comment out later
+    sendCharacter((char)ch);
+    if (wireless) sendWireless((char)ch);
+
+    if (ditPressed() && dahPressed()) {
+      sendString("=  ");
+      for (int i = 0; i < pageSkip; i++) {
+        if (book.available()) book.read();
+        else break;
+      }
+    }
+  }
+
+  book.close();
+  if (wireless) closeWireless();
+}
+
 
 void sendFromSD()                                 // show files on SD card, get user selection & send it.
 {
