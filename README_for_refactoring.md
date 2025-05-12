@@ -1,29 +1,31 @@
 # Overall Goal
 
-Bruce Hall's implementation of the morse code tutor is a wonderful tool for learning morse code, but I found that the sound quality was harsh when I used headphones.
+Bruce Hall's implementation of the morse code tutor (https://github.com/bhall66/morse-tutor/blob/master/) is a wonderful tool for learning morse code, but I found that the sound 
+quality was harsh when I used headphones.
 
-The goal of this project was to replace the original square wave tone (used for Morse code beeps) with a smoother sine wave, 
-to produce a softer, less percussive sound that is easier on the ears and better for listening at higher volumes.
+I'm not a C++ programmer, but I asked ChatGPT to help me try to refactor the code to improve the sound quality. The goal of the project was to replace the original square wave 
+tone (used for Morse code beeps) with a smoother sine wave, which would produce a softer, less percussive sound.
+
+This project is a fork of Bruce Hall's repository.
 
 # How We're Achieving It
 
 1. We had to bypass the normal audio for the tutor by adding jumpers directly off the ESP32 board to use the built-in DAC (digital-to-audio-converters) on 
 the board. Here's what ChatGPT has us do:
 
-* Find GPIO25 on the ESP32 Board. GPIO25 will be labeled as 25 on the silkscreen or board diagram.
-* Wire GPIO25 to the audio output. Temporarily, run a jumper wire from GPIO25 to the input of your audio amplifier or the 3.5 mm jack’s input line.
+  * Find GPIO25 on the ESP32 Board. GPIO25 will be labeled as 25 on the silkscreen or board diagram.
+  * Wire GPIO25 to the audio output. Temporarily, run a jumper wire from GPIO25 to the input of your audio amplifier or the 3.5 mm jack’s input line.
   Later, with the help of a friend, we made an inline filter using a 10 µF capacitor in series between GPIO25 and the audio input to block DC (important with DAC).
-* Set up the ground jumper. We made sure the GND of your ESP32 was connected to the GND of your amplifier.
+  * Set up the ground jumper. We made sure the GND of your ESP32 was connected to the GND of your amplifier.
 
 2. Use the ESP32’s Built-in DAC. The ESP32 has two 8-bit Digital-to-Analog Converters (DACs) on pins 25 and 26. We use `dacWrite(pin, value)` to output a voltage corresponding to a value between 0–255.
 So:
 
-* `dacWrite(25, 128)` = ~midpoint voltage (silence)
-* `dacWrite(25, 255)` = max voltage
-* `dacWrite(25, 0)` = min voltage
+  * `dacWrite(25, 128)` = ~midpoint voltage (silence)
+  * `dacWrite(25, 255)` = max voltage
+  * `dacWrite(25, 0)` = min voltage
 
-
-This lets us output a waveform by writing a sequence of values over time.
+  This lets us output a waveform by writing a sequence of values over time.
 
 3. Simulate a sine wave. We use a lookup table `(sineTable[])` to represent a full cycle of a sine wave. The values go from 128 (center), 
 to 255 (peak), back to 128, then to 0 (valley), then back to 128. This table is indexed by a timer interrupt `(onTimer()`), 
@@ -39,6 +41,7 @@ where each dit and dah is short.
 # Summary of What the DAC Routine Does
 
 The DAC simply outputs direct voltage levels, but by rapidly changing those values (according to a sine function), we can:
+
 * Emulate smooth analog waveforms
 * Shape them with an envelope function
 * Replace old square-wave pulses with audio-quality tones
@@ -64,8 +67,8 @@ Here are some items that were modified for this:
 
 ## New or Modified Functions:
 
-* `initSineTable()` — initializes sine waveform table
-* `onTimer()` — ISR generating sine wave output via DAC
+* `initSineTable()`—initializes sine waveform table
+* `onTimer()`—ISR generating sine wave output via DAC
 * `hitTone()` and `missTone()`
 
 ## Envelope Smoothing (Cosine Envelope)
@@ -80,9 +83,9 @@ We made several changes to add the smoothing:
 
 ### New or Modified Functions:
 
-* `initEnvelopeTable()` — fills envelopeTable with a cosine-shaped ramp
-* `onTimer()` — extended to apply envelope shaping during DAC output
-* `keyDown()` and `keyUp()` — may now set envelopeActive = true/false
+* `initEnvelopeTable()`—fills envelopeTable with a cosine-shaped ramp
+* `onTimer()`—extended to apply envelope shaping during DAC output
+* `keyDown()` and `keyUp()`—may now set envelopeActive = true/false
 
 ## Reconnect Pitch Menu to DAC frequency
 
@@ -118,7 +121,6 @@ Here are some other changes that ChatGPT made to get the SD card code to work ag
 
 ### Modified Definitions:
 
-Here are sone new definitions:
 
 * `#define FNAMESIZE 15`   // or whatever your filename buffer size is
 * `#define MAXFILES  10`   // limit of how many files are listed
