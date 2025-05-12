@@ -13,17 +13,16 @@ This project is a fork of Bruce Hall's repository.
 1. We had to bypass the normal audio for the tutor by adding jumpers directly off the ESP32 board to use the built-in DAC (digital-to-audio-converters) on 
 the board. Here's what ChatGPT has us do:
 
-  * Find GPIO25 on the ESP32 Board. GPIO25 will be labeled as 25 on the silkscreen or board diagram.
-  * Wire GPIO25 to the audio output. Temporarily, run a jumper wire from GPIO25 to the input of your audio amplifier or the 3.5 mm jack’s input line.
-  Later, with the help of a friend, we made an inline filter using a 10 µF capacitor in series between GPIO25 and the audio input to block DC (important with DAC).
-  * Set up the ground jumper. We made sure the GND of your ESP32 was connected to the GND of your amplifier.
+    * Find GPIO25 on the ESP32 Board. GPIO25 will be labeled as 25 on the silkscreen or board diagram.
+    * Wire GPIO25 to the audio output. Temporarily, run a jumper wire from GPIO25 to the input of your audio amplifier or the 3.5 mm jack’s input line. Later, with the help of a friend, we made an inline filter using a 10 µF capacitor in series between GPIO25 and the audio input to block DC (important with DAC).
+    * Set up the ground jumper. We made sure the GND of your ESP32 was connected to the GND of your amplifier.
 
 2. Use the ESP32’s Built-in DAC. The ESP32 has two 8-bit Digital-to-Analog Converters (DACs) on pins 25 and 26. We use `dacWrite(pin, value)` to output a voltage corresponding to a value between 0–255.
 So:
 
-  * `dacWrite(25, 128)` = ~midpoint voltage (silence)
-  * `dacWrite(25, 255)` = max voltage
-  * `dacWrite(25, 0)` = min voltage
+    * `dacWrite(25, 128)` = ~midpoint voltage (silence)
+    * `dacWrite(25, 255)` = max voltage
+    * `dacWrite(25, 0)` = min voltage
 
   This lets us output a waveform by writing a sequence of values over time.
 
