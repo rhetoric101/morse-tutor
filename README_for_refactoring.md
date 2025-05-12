@@ -56,7 +56,9 @@ Here’s a summary of the functions, definitions, and code regions changed in th
 
 ## DAC Sine Wave Output
 
-Here are some items that were modified for this:
+Here are some changes for the sine wave emulation:
+
+### New or modified variables:
 
     ```
 	#define DAC_PIN 25
@@ -64,7 +66,7 @@ Here are some items that were modified for this:
 	uint8_t sineTable[SINE_TABLE_SIZE];
 	```
 
-## New or Modified Functions:
+### New or Modified Functions:
 
 * `initSineTable()`—initializes sine waveform table
 * `onTimer()`—ISR generating sine wave output via DAC
