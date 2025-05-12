@@ -58,7 +58,7 @@ Here’s a summary of the functions, definitions, and code regions changed in th
 
 Here are some changes for the sine wave emulation:
 
-### New or modified variables:
+### New or modified variables
 
     ```
 	#define DAC_PIN 25
@@ -66,7 +66,7 @@ Here are some changes for the sine wave emulation:
 	uint8_t sineTable[SINE_TABLE_SIZE];
 	```
 
-### New or Modified Functions:
+### New or Modified Functions
 
 * `initSineTable()`—initializes sine waveform table
 * `onTimer()`—ISR generating sine wave output via DAC
@@ -76,13 +76,13 @@ Here are some changes for the sine wave emulation:
 
 We made several changes to add the smoothing:
 
-### New or modified variables:
+### New or modified variables
 
 * `#define ENVELOPE_MAX SINE_TABLE_SIZE`
 * `uint8_t envelopeTable[ENVELOPE_MAX + 1];`
 * `volatile bool envelopeActive = false;`
 
-### New or Modified Functions:
+### New or Modified Functions
 
 * `initEnvelopeTable()`—fills envelopeTable with a cosine-shaped ramp
 * `onTimer()`—extended to apply envelope shaping during DAC output
