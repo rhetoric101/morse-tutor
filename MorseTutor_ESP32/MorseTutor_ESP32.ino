@@ -40,18 +40,18 @@
 #define LED                 2                     // onboard LED pin
 #define SCREEN_ROTATION     3                     // landscape mode: use '1' or '3'
 
-#define SINE_TABLE_SIZE 64
-#define ENVELOPE_MAX SINE_TABLE_SIZE
-#define DAC_PIN 25  
+#define SINE_TABLE_SIZE 64 // Add for sine wave output per ChatGPT
+#define ENVELOPE_MAX SINE_TABLE_SIZE // Add for sound envelope per ChatGPT
+#define DAC_PIN 25  // Add for sine wave output per ChatGPT
 
-uint8_t sineTable[SINE_TABLE_SIZE];
-uint8_t envelopeTable[ENVELOPE_MAX + 1]; // Holds cosine-shaped envelope
-volatile bool dacActive = false;
-volatile bool envelopeActive = false;
-volatile uint8_t envelopeStep = 0;
-volatile int sineIndex = 0;
+uint8_t sineTable[SINE_TABLE_SIZE]; // Add for sine wave output per ChatGPT
+uint8_t envelopeTable[ENVELOPE_MAX + 1]; // Holds cosine-shaped envelope per ChatGPT
+volatile bool dacActive = false; // Add for sine wave output per ChatGPT
+volatile bool envelopeActive = false; // Add for sound envelope per ChatGPT
+volatile uint8_t envelopeStep = 0; // Add for sound envelope per ChatGPT
+volatile int sineIndex = 0; // Add for sine wave output per ChatGPT
 
-hw_timer_t *timer = NULL;
+hw_timer_t *timer = NULL; // Add for sine wave output per ChatGPT
 
 //===================================  Wireless Constants ===============================
 #define CHANNEL             1                     // Wifi channel number
@@ -562,21 +562,7 @@ int readEncoder(int numTicks = ENCODER_TICKS)
 
 //===================================  Morse Routines ===================================
 
-/* Original keyUp...
-void keyUp()                                      // device-dependent actions 
-{                                                 // when key is up:
-  digitalWrite(LED,0);                            // turn off LED
-  ledcWrite(0,0);                                 // and turn off sound
-}
-*/
-/* Temporarily commenting this out to add an envelope
-void keyUp() {
-  digitalWrite(LED, 0);        // Turn off LED
-  dacActive = false;           // Stop sine wave output
-  dacWrite(AUDIO, 128);        // Set DAC to midpoint (silence)
-  timerAlarmDisable(timer);    // Disable timer interrupt
-}
-*/
+// New version of keyUp() to add envelope per ChatGPT
 void keyUp() {
   digitalWrite(LED, 0);
   envelopeStep = ENVELOPE_MAX - 1;
@@ -584,14 +570,7 @@ void keyUp() {
   dacActive = false;
 }
 
-/* Temporarily commenting this out in favor a fade-in version below
-void keyDown() {
-  if (!SUPPRESSLED) digitalWrite(LED, 1);  // Optional visual cue
-  sineIndex = 0;                           // Reset waveform phase
-  dacActive = true;                        // Enable sine output
-  timerAlarmEnable(timer);                // Start DAC timer
-}
-*/
+// New fade-in version of keyDown() per ChatGPT
 void keyDown() {
   if (!SUPPRESSLED) digitalWrite(LED, 1);
   sineIndex = 0;
@@ -980,21 +959,37 @@ void sendQSO()
   sendString(qso);                                // send entire QSO
 }
 
-int getFileList  (char list[][FNAMESIZE])         // gets list of files on SD card
+// New getFileList()from ChatGPT to fix SD card issues.
+// This replaces the original strcpy() line with a more robust version that:
+// * Avoids skipping the first letter unless it’s a /
+// * Protects against buffer overflows
+// * Ensures null termination
+
+int getFileList(char list[][FNAMESIZE])         // gets list of files on SD card
 {
-  File root = SD.open("/");                       // open root directory on the SD card
-  int count=0;                                    // count the number of files
-  while (count < MAXFILES)                        // only room for so many!
+  File root = SD.open("/");                     // open root directory on the SD card
+  int count = 0;                                // count the number of files
+  while (count < MAXFILES)                      // only room for so many!
   {
-    File entry = root.openNextFile();             // get next file in the SD root directory
-    if (!entry) break;                            // leave if there aren't any more
-    if (!entry.isDirectory() &&                   // ignore directory names
-    (entry.name()[0] != '_'))                     // ignore hidden "_name" Mac files
-      strcpy(list[count++],&entry.name()[1]);     // add SD file to the list (ESP32: remove '/')
-    entry.close();                                // close the file
+    File entry = root.openNextFile();           // get next file in the SD root directory
+    if (!entry) break;                          // leave if there aren't any more
+
+    const char* name = entry.name();
+
+    if (!entry.isDirectory() && name[0] != '_') // skip directories and Mac metadata
+    {
+      if (name[0] == '/') name++;               // skip leading slash if present
+
+      strncpy(list[count], name, FNAMESIZE - 1);     // copy filename safely
+      list[count][FNAMESIZE - 1] = '\0';             // ensure null termination
+      Serial.printf("File %d: [%s]\n", count, list[count]);  // log for debug
+      count++;
+    }
+
+    entry.close();                              // close the file
   }
-  root.close(); 
-  return count; 
+  root.close();
+  return count;
 }
 
 void displayFiles(char menu[][FNAMESIZE], int top, int itemCount)
@@ -1053,34 +1048,63 @@ int fileMenu(char menu[][FNAMESIZE], int itemCount) // Display list of files & g
   return index;  
 }
 
+// New sendFile() from ChatGPT to fix SD card issues:
+// * Logging the filename and full path
+// * Validation that the file actually opened
+// * A character-by-character debug print (optional)
+// * Safe file reading with guard conditions
+
 void sendFile(char* filename)                     // output a file to screen & morse
 {
-  char s[FNAMESIZE] = "/";                        // ESP32: need space for whole filename
-  strcat(s,filename);                             // ESP32: prepend filename with slash
-  const int pageSkip = 250;                       // number of characters to skip, if asked to
-  newScreen();                                    // clear screen below menu
-  bool wireless = longPress();                    // if long button press, send file wirelessly
-  if (wireless) initWireless();                   // start wireless transmission
-  button_pressed = false;                         // reset flag for new presses
-  File book = SD.open(s);                         // look for book on sd card
-  if (book) {                                     // find it? 
-    while (!button_pressed && book.available())   // do for all characters in book:
-    {                                    
-      char ch = book.read();                      // get next character
-      if (ch=='\n') ch = ' ';                     // convert LN to a space
-      sendCharacter(ch);                          // and send it
-      if (wireless) sendWireless(ch);
-      if (ditPressed() && dahPressed())           // user wants to 'skip' ahead:
-      {
-        sendString("=  ");                        // acknowledge the skip with ~BT
-        for (int i=0; i<pageSkip; i++)
-          book.read();                            // skip a bunch of text!
+  char s[FNAMESIZE] = "/";
+  strncat(s, filename, FNAMESIZE - 2);            // safely prepend slash
+  s[FNAMESIZE - 1] = '\0';                        // ensure null termination
+
+  Serial.print("Requested file: ");
+  Serial.println(filename);
+  Serial.print("Full path: ");
+  Serial.println(s);
+
+  const int pageSkip = 250;
+  newScreen();
+
+  bool wireless = longPress();
+  if (wireless) initWireless();
+
+  button_pressed = false;
+
+  File book = SD.open(s);
+  if (!book) {
+    Serial.println("Failed to open file.");
+    return;
+  }
+
+  Serial.println("File opened successfully.");
+
+  while (!button_pressed && book.available()) {
+    int ch = book.read();
+    if (ch < 0) break;
+
+    if (ch == '\n') ch = ' ';
+    
+    // Debug: echo character to serial
+    Serial.write(ch);  // Optional: comment out later
+    sendCharacter((char)ch);
+    if (wireless) sendWireless((char)ch);
+
+    if (ditPressed() && dahPressed()) {
+      sendString("=  ");
+      for (int i = 0; i < pageSkip; i++) {
+        if (book.available()) book.read();
+        else break;
       }
     }
-    book.close();                                 // close the file
-  } 
-  if (wireless) closeWireless();                  // close wireless transmission
+  }
+
+  book.close();
+  if (wireless) closeWireless();
 }
+
 
 void sendFromSD()                                 // show files on SD card, get user selection & send it.
 {
@@ -1329,15 +1353,7 @@ void headCopy()                                  // show a callsign & see if use
   }
 }
 
-/* Old pre-DAC hit-tone function:
-void hitTone()
-{
-   // ledcWriteTone(0,440); delay(150);               // first tone 
-   // ledcWriteTone(0,600); delay(200);               // second tone
-   // ledcWrite(0,0);                                 // audio off
-}
-*/
-// Final hitTone from ChatGPT
+// Modified hitTone() from ChatGPT
 void hitTone() {
   sineIndex = 0;               // Start at beginning of waveform
   dacActive = true;            // Enable sine output
@@ -1349,14 +1365,7 @@ void hitTone() {
 }
 
 
-/* Old missTone function before DAC:
-void missTone()
-{
-  // ledcWriteTone(0,200); delay(200);               // single tone
-  // ledcWrite(0,0);                                 // audio off
-}
-*/
-
+// New missTone() from ChatGPT
 void missTone() {
   sineIndex = 0;
   dacActive = true;
@@ -1781,34 +1790,9 @@ void setSpeed()
   saveConfig();                                   // save the new speed values
   roger();                                        // and acknowledge  
 }
-// Comment out old setPitch per ChatGPT
-/*
-void setPitch()
-{
-  const int x=120,y=80;                           // screen posn for pitch display
-  tft.print("Tone Frequency (Hz)");
-  tft.setTextSize(4);
-  tft.setCursor(x,y);
-  tft.print(pitch);                               // show current pitch                 
-  while (!button_pressed)
-  {
-    int dir = readEncoder(2);
-    if (dir!=0)                                   // user rotated encoder knob
-    {
-      pitch += dir*50;                            // so change pitch up/down, 50Hz increments
-      pitch=constrain(pitch,MINPITCH,MAXPITCH);   // stay in range
-      tft.fillRect(x,y,100,40,bgColor);           // erase old value
-      tft.setCursor(x,y);
-      tft.print(pitch);                           // and display new value
-      dit();                                      // let user hear new pitch
-    }
-  }
-  saveConfig();                                   // save the new pitch 
-  roger();                                        // and acknowledge
-}
-*/
 
-// New setPitch from ChatGPT
+
+// New setPitch() from ChatGPT to wire up pitch menu to sound:
 void setPitch()
 {
   const int x = 120, y = 80;                           // screen posn for pitch display
@@ -2160,32 +2144,7 @@ void initSineTable() {
   }
 }
 
-// Add function per ChatGPT
-/* Temporarily remove per ChatGPT
-void IRAM_ATTR onTimer() {
-  if (dacActive) {
-    dacWrite(DAC_PIN, sineTable[sineIndex]);
-    sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
-  } else {
-    dacWrite(DAC_PIN, 128);  // silence
-  }
-}
-*/
-
-/* Comment this out per ChatGPT while testing envelope code...
-void IRAM_ATTR onTimer() {
-  static uint8_t lastOutput = 128;
-  uint8_t output = dacActive ? sineTable[sineIndex] : 128;
-
-  if (output != lastOutput) {
-    dacWrite(DAC_PIN, output);
-    lastOutput = output;
-  }
-
-  sineIndex = (sineIndex + 1) % SINE_TABLE_SIZE;
-}
-*/
-// Updated onTImer() from ChatGPT
+// Updated onTimer() from ChatGPT
 void IRAM_ATTR onTimer() {
   static uint8_t lastOutput = 128;
   uint8_t rawSample = sineTable[sineIndex];
@@ -2220,13 +2179,15 @@ void IRAM_ATTR onTimer() {
 }
 
 
-// Initialize envelope from ChatGPT:
+// New function to initialize cosine-shaped ramp from ChatGPT:
 void initEnvelopeTable() {
   for (int i = 0; i <= ENVELOPE_MAX; i++) {
     float scale = 0.5 * (1 - cos(PI * i / ENVELOPE_MAX));  // cosine ramp
     envelopeTable[i] = (uint8_t)(scale * 255);
   }
 }
+
+// ChatGPT revised setup() to add timer and envelope details
 void setup() 
 {    
   Serial.begin(115200);  // ← This MUST be first for consistent debug output
@@ -2237,7 +2198,7 @@ void setup()
   timer = timerBegin(0, 80, true);  
   timerAttachInterrupt(timer, &onTimer, true);
   timerAlarmWrite(timer, 1000000 / freq, true);
-  // timerAlarmEnable(timer);  // Enabled dynamically in keyDown
+  // timerAlarmEnable(timer);  is now handled dynamically in keyDown() per ChatGPT
 
   Serial.begin(115200); 
   initScreen();
