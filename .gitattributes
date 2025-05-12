@@ -1,2 +1,24 @@
-# Auto detect text files and perform LF normalization
+# Force LF endings for Arduino-related code files
+*.ino  text eol=lf
+*.c    text eol=lf
+*.cpp  text eol=lf
+*.h    text eol=lf
+*.hpp  text eol=lf
+
+# Normalize text and documentation files
+*.txt  text eol=lf
+*.md   text eol=lf
+*.csv  text eol=lf
+*.json text eol=lf
+*.xml  text eol=lf
+
+# Treat these as binary — no line ending conversion or diffing
+*.jpg  binary
+*.png  binary
+*.bmp  binary
+*.zip  binary
+*.hex  binary
+*.bin  binary
+
+# Fallback: Auto-detect text and normalize LF
 * text=auto
